@@ -1,1 +1,426 @@
-/
+/* Find the top 5 least paid employees for each job title (Question From City Of San Francisco)
+
+Find the top 5 least paid employees for each job title.
+Output the employee name, job title and total pay with benefits for the first 5 least paid employees. Avoid gaps in ranking. */
+
+WITH CTE AS(
+select employeename,
+jobtitle,
+totalpaybenefits,
+DENSE_RANK() OVER (PARTITION BY jobtitle ORDER BY totalpaybenefits)
+from sf_public_salaries)
+
+SELECT employeename,
+jobtitle,
+totalpaybenefits
+FROM CTE
+WHERE dense_rank <= 5
+;
+
+/* Find the number of employees who received the bonus and who didn't (Question From Microsoft/Dell)
+
+Find the number of employees who received the bonus and who didn't. Bonus values in employee table are corrupted so you should use  values from the bonus table. 
+Be aware of the fact that employee can receive more than bonus.
+Output value inside has_bonus column (1 if they had bonus, 0 if not) along with the corresponding number of employees for each. */
+
+WITH bonus_status AS (
+
+SELECT CASE WHEN worker_ref_id IS NULL THEN 0 ELSE 1 END AS has_bonus,
+id
+FROM employee a
+LEFT JOIN bonus b
+ON a.id = b.worker_ref_id)
+
+SELECT has_bonus,
+COUNT(DISTINCT id)
+FROM bonus_status 
+GROUP BY has_bonus
+
+/* Keywords From Yelp Reviews (Question From Yelp)
+
+Find Yelp food reviews containing any of the keywords: 'food', 'pizza', 'sandwich', or 'burger'. 
+List the business name, address, and the state which satisfies the requirement. */
+
+SELECT business_name,
+address,
+state
+
+FROM
+(select business_name,
+review_text
+FROM yelp_reviews
+WHERE strpos(review_text,'food') <> 0 OR
+strpos(review_text, 'pizza') <> 0 OR
+strpos(review_text, 'sandwich') <> 0 OR
+strpos(review_text, 'burger') <> 0) reviews
+
+JOIN yelp_business bus
+ON BTRIM(name, '"') = reviews.business_name
+
+;
+
+/* City With Most Amenities (Question From Airbnb)
+
+You're given a dataset of searches for properties on Airbnb. For simplicity, let's say that each search result (i.e., each row) represents a unique host. 
+Find the city with the most amenities across all their host's properties. Output the name of the city. */
+
+WITH amenities_table AS(
+select amenities,
+city,
+ARRAY_LENGTH(STRING_TO_ARRAY(amenities,','),1) as num_of_amenities
+from airbnb_search_details)
+
+, city_and_amenity_sum AS(
+SELECT city,
+SUM(num_of_amenities)
+FROM amenities_table
+GROUP BY city 
+ORDER BY sum desc
+LIMIT 1)
+
+SELECT city
+FROM city_and_amenity_sum
+;
+
+/* Find Favourite Wine Variety (Question From Wine Magazine)
+
+Find each taster's favorite wine variety.
+Consider that favorite variety means the variety that has been tasted by most of the time.
+Output the taster's name along with the wine variety. */
+
+WITH tasters_and_varieties AS (
+SELECT taster_name,
+variety
+FROM winemag_p2
+WHERE taster_name IS NOT NULL 
+ORDER BY taster_name)
+
+, ranked_CTE AS (
+SELECT taster_name,
+variety,
+RANK() OVER(PARTITION BY taster_name ORDER BY COUNT(variety) desc)
+FROM tasters_and_varieties 
+GROUP BY taster_name, variety)
+
+SELECT taster_name,
+variety
+FROM ranked_CTE
+WHERE rank = 1
+;
+
+/* Distinct Salaries (Question From Twitter)
+
+Find the top three distinct salaries for each department. Output the department name and the top 3 distinct salaries by each department. 
+Order your results alphabetically by department and then by highest salary to lowest. */ 
+
+WITH CTE AS (
+SELECT department,
+salary,
+dense_rank,
+ROW_NUMBER() OVER(PARTITION BY department, salary)
+FROM
+    (select department,
+    salary,
+    DENSE_RANK() OVER(PARTITION BY department ORDER BY salary desc) 
+    from twitter_employee) b
+WHERE dense_rank IN (1,2,3))
+
+SELECT department,
+salary
+FROM CTE
+WHERE row_number = 1
+ORDER BY department, salary desc
+;
+
+/* Best Selling Item (Question From Amazon)
+
+Find the best selling item for each month (no need to separate months by year) where the biggest total invoice was paid. 
+The best selling item is calculated using the formula (unitprice * quantity). Output the description of the item along with the amount paid. */
+
+WITH CTE as(SELECT month,
+description,
+MAX(total_paid) OVER(PARTITION BY month),
+total_paid
+FROM
+(SELECT DATE_PART('month', invoicedate) as month,
+description,
+SUM(unitprice * quantity) as total_paid
+FROM online_retail
+GROUP BY description, month) b
+ORDER BY month)
+
+SELECT month,
+description,
+total_paid
+FROM CTE
+WHERE max = total_paid ;
+
+/* Make a pivot table to find the highest payment in each year for each employee (Question From City Of San Francisco)
+
+Make a pivot table to find the highest payment in each year for each employee.
+Find payment details for 2011, 2012, 2013, and 2014.
+Output payment details along with the corresponding employee name.
+Order records by the employee name in ascending order */ 
+
+WITH CTE AS (SELECT employeename,
+MAX(pay2011) as max2011,
+MAX(pay2012) as max2012,
+MAX(pay2013) as max2013,
+MAX(pay2014) as max2014
+FROM
+(select employeename,
+(CASE WHEN year = '2011' THEN totalpay ELSE 0 END) as pay2011,
+(CASE WHEN year = '2012' THEN totalpay ELSE 0 END) as pay2012,
+(CASE WHEN year = '2013' THEN totalpay ELSE 0 END) as pay2013,
+(CASE WHEN year = '2014' THEN totalpay ELSE 0 END) as pay2014
+from sf_public_salaries
+ORDER BY employeename) a
+GROUP BY employeename)
+
+SELECT employeename,
+SUM(max2011) as summax2011,
+SUM(max2012) as summax2012,
+SUM(max2013) as summax2013,
+SUM(max2014) as summax2014
+FROM CTE
+GROUP BY employeename
+ORDER BY employeename
+
+/* Comments Distribution (Question From Meta/Facebook)
+
+Write a query to calculate the distribution of comments by the count of users that joined Meta/Facebook between 2018 and 2020, for the month of January 2020.
+
+The output should contain a count of comments and the corresponding number of users that made that number of comments in Jan-2020. For example, you'll be counting how many users made 1 comment, 2 comments, 3 comments, 4 comments, etc in Jan-2020. 
+Your left column in the output will be the number of comments while your right column in the output will be the number of users. Sort the output from the least number of comments to highest.
+
+To add some complexity, there might be a bug where an user post is dated before the user join date. You'll want to remove these posts from the result. */
+
+SELECT comment_cnt,
+       count(t.id) AS user_cnt
+FROM
+  (SELECT a.id,
+          count(*) AS comment_cnt
+   FROM fb_users a
+   INNER JOIN fb_comments b ON a.id=b.user_id
+   WHERE b.created_at BETWEEN '01-01-2020' AND '01-31-2020'::date
+     AND a.joined_at BETWEEN '01-01-2018' AND '12-31-2020'::date
+     AND created_at - joined_at >=0
+   GROUP BY a.id) t
+GROUP BY comment_cnt
+ORDER BY comment_cnt ASC
+
+/* Sales Growth per Territory (Question From Amazon)
+
+Write a query to return Territory and corresponding Sales Growth. Compare growth between periods Q4-2021 vs Q3-2021.
+If Territory (say T123) has Sales worth $100 in Q3-2021 and Sales worth $110 in Q4-2021, then the Sales Growth will be 10% [ i.e. = ((110 - 100)/100) * 100 ]
+Output the ID of the Territory and the Sales Growth. Only output these territories that had any sales in both quarters. */ 
+
+WITH CTE as(select territory_id,
+EXTRACT(QUARTER FROM order_date) as quarter,
+(CASE WHEN EXTRACT(QUARTER FROM order_date) = 3 THEN SUM(order_value) END) as q3,
+(CASE WHEN EXTRACT(QUARTER FROM order_date) = 4 THEN SUM(order_value) END) as q4
+from fct_customer_sales a
+JOIN map_customer_territory b
+ON a.cust_id = b.cust_id
+WHERE EXTRACT(YEAR FROM order_date) = 2021
+GROUP BY territory_id, order_date),
+
+CTE2 as (SELECT territory_id,
+SUM(q3) as q3sum,
+SUM(q4) as q4sum
+FROM CTE
+GROUP BY territory_id
+HAVING SUM(q3) IS NOT NULL
+AND SUM(q4) IS NOT NULL)
+
+SELECT territory_id,
+((q4sum - q3sum) / q3sum) * 100
+FROM CTE2
+GROUP BY territory_id, q4sum, q3sum
+;
+
+/* Premium vs Freemium (Question From Microsoft)
+
+Find the total number of downloads for paying and non-paying users by date. Include only records where non-paying customers have more downloads than paying customers. 
+The output should be sorted by earliest date first and contain 3 columns date, non-paying downloads, paying downloads. */ 
+
+WITH np as(
+select DISTINCT date,
+CASE WHEN paying_customer = 'no' THEN SUM(downloads) ELSE NULL END as non_paying
+from ms_user_dimension a
+JOIN ms_acc_dimension b
+ON a.acc_id = b.acc_id 
+JOIN ms_download_facts c
+ON a.user_id = c.user_id
+GROUP BY date, paying_customer
+ORDER BY date)
+,
+np2 as (
+SELECT * FROM np
+WHERE non_paying IS NOT NULL)
+,
+p as (
+select DISTINCT date,
+CASE WHEN paying_customer = 'yes' THEN SUM(downloads) ELSE NULL END as paying
+from ms_user_dimension a
+JOIN ms_acc_dimension b
+ON a.acc_id = b.acc_id 
+JOIN ms_download_facts c
+ON a.user_id = c.user_id
+GROUP BY date, paying_customer
+ORDER BY date)
+,
+p2 as (
+SELECT * FROM p
+WHERE paying IS NOT NULL)
+SELECT a.date,
+non_paying,
+paying
+FROM np2 a
+JOIN p2 b
+ON a.date = b.date
+WHERE non_paying > paying
+;
+
+/* Distance Per Dollar (Question From Uber) 
+
+You’re given a dataset of uber rides with the traveling distance (‘distance_to_travel’) and cost (‘monetary_cost’) for each ride. 
+First, find the difference between the distance-per-dollar for each date and the average distance-per-dollar for that year-month. Distance-per-dollar is defined as the distance traveled divided by the cost of the ride. 
+Use the calculated difference on each date to calculate absolute average difference in distance-per-dollar metric on monthly basis (year-month).
+
+
+The output should include the year-month (YYYY-MM) and the absolute average difference in distance-per-dollar (Absolute value to be rounded to the 2nd decimal).
+You should also count both success and failed request_status as the distance and cost values are populated for all ride requests. Also, assume that all dates are unique in the dataset. 
+Order your results by earliest request date first. */
+
+with sub as(
+select to_char(request_date, 'YYYY-MM') as date,
+request_date,
+SUM(distance_to_travel) / SUM(monetary_cost) as dpd
+from uber_request_logs
+GROUP BY request_date
+ORDER BY request_date)
+,
+sub2 as (
+SELECT date,
+request_date,
+dpd,
+AVG(dpd) OVER(PARTITION BY date) as mdpdavg
+FROM sub)
+,
+sub3 as (
+SELECT date,
+request_date,
+ABS(dpd - mdpdavg) as goal,
+ROW_NUMBER() OVER(PARTITION BY date ORDER BY date) as RN
+FROM sub2)
+SELECT date,
+ROUND(goal :: DECIMAL,2)
+FROM sub3
+WHERE RN = 1
+
+/* Top Percentile Fraud (Question From Google)
+
+ABC Corp is a mid-sized insurer in the US and in the recent past their fraudulent claims have increased significantly for their personal auto insurance portfolio. 
+They have developed a ML based predictive model to identify propensity of fraudulent claims. Now, they assign highly experienced claim adjusters for top 5 percentile of claims identified by the model.
+Your objective is to identify the top 5 percentile of claims from each state. Your output should be policy number, state, claim cost, and fraud score. */
+
+with sub as(
+select *,
+percent_rank() OVER(PARTITION BY state ORDER BY fraud_score) as percentile
+from fraud_score)
+SELECT policy_num,
+state,
+claim_cost,
+fraud_score
+FROM sub
+WHERE percentile >= .95
+
+/* Naive Forecasting (Question From Uber)
+
+Some forecasting methods are extremely simple and surprisingly effective. Naïve forecast is one of them; we simply set all forecasts to be the value of the last observation. 
+Our goal is to develop a naïve forecast for a new metric called "distance per dollar" defined as the (distance_to_travel/monetary_cost) in our dataset and measure its accuracy.
+
+To develop this forecast,  sum "distance to travel"  and "monetary cost" values at a monthly level before calculating "distance per dollar". This value becomes your actual value for the current month. 
+The next step is to populate the forecasted value for each month. This can be achieved simply by getting the previous month's value in a separate column. Now, we have actual and forecasted values. 
+This is your naïve forecast. Let’s evaluate our model by calculating an error matrix called root mean squared error (RMSE). RMSE is defined as sqrt(mean(square(actual - forecast)). 
+Report out the RMSE rounded to the 2nd decimal spot.*/
+
+with sub as(
+select to_char(request_date, 'YYYY-MM') as month,
+SUM(distance_to_travel) / SUM(monetary_cost) as dpd
+from uber_request_logs
+GROUP BY month
+ORDER BY month)
+, sub2 as (
+SELECT month, 
+dpd,
+LAG(dpd, 1) OVER(ORDER BY month) as prev_dpd
+FROM sub)
+, sub3 as (
+SELECT month,
+dpd,
+prev_dpd,
+POWER((dpd - prev_dpd), 2) as power2
+FROM sub2)
+SELECT ROUND(SQRT(AVG(power2)) :: DECIMAL, 2) as rmse
+FROM sub3
+
+/* Revenue Over Time (Question From Amazon)
+
+Find the 3-month rolling average of total revenue from purchases given a table with users, their purchase amount, and date purchased. 
+Do not include returns which are represented by negative purchase values. Output the year-month (YYYY-MM) and 3-month rolling average of revenue, sorted from earliest month to latest month.
+
+
+A 3-month rolling average is defined by calculating the average total revenue from all user purchases for the current month and previous two months. 
+The first two months will not be a true 3-month rolling average since we are not given data from last year. Assume each month has at least one purchase. */
+
+WITH current as(
+select to_char(created_at, 'YYYY-MM') as month,
+SUM(purchase_amt) as revenue
+from amazon_purchases
+WHERE purchase_amt > 0
+GROUP BY month
+ORDER BY month)
+, previous1 as (
+SELECT month,
+LAG(revenue,1) OVER(ORDER BY month) as previous1rev
+FROM current)
+, previous2 as (
+SELECT month,
+LAG(revenue,2) OVER(ORDER BY month) as previous2rev
+FROM current)
+, combined as (
+SELECT * FROM current
+UNION ALL 
+SELECT * FROM previous1
+UNION ALL
+SELECT * FROM previous2)
+SELECT month,
+AVG(revenue)
+FROM combined
+GROUP BY month
+ORDER BY month
+
+/* Monthly Percentage Difference (Question From Amazon)
+
+Given a table of purchases by date, calculate the month-over-month percentage change in revenue. 
+The output should include the year-month date (YYYY-MM) and percentage change, rounded to the 2nd decimal point, and sorted from the beginning of the year to the end of the year.
+The percentage change column will be populated from the 2nd month forward and can be calculated as ((this month's revenue - last month's revenue) / last month's revenue)*100. */
+
+WITH thismonth as(
+select DISTINCT to_char(created_at, 'YYYY-MM') as year_month,
+SUM(value) as revenue
+from sf_transactions
+GROUP BY year_month
+ORDER BY year_month)
+, lastmonth as(
+SELECT year_month,
+LAG(revenue, 1) OVER(ORDER BY year_month) as last_month_revenue
+from thismonth)
+SELECT thisy.year_month,
+ROUND(((revenue - last_month_revenue) / last_month_revenue) * 100, 2) as revenue_diff_pct
+FROM lastmonth lasty
+JOIN thismonth thisy
+ON lasty.year_month = thisy.year_month;
+
